@@ -626,6 +626,14 @@ const createImageUploader = () => {
   return multer({
     storage: memoryStorage,
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    fileFilter: (req, file, cb) => {
+      const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+      if (allowedMimes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Invalid file type. Only image files are allowed.'));
+      }
+    }
   }).single('image');
 };
 
@@ -634,7 +642,11 @@ exports.imageUploadMiddleware = (req, res, next) => {
   uploadToMemory(req, res, (err) => {
     if (err) {
       console.error('Upload error:', err);
-      return res.status(500).json({ error: err.message });
+      // Return 413 if it's a size limit error from multer, or our custom MIME error
+      if (err.code === 'LIMIT_FILE_SIZE' || err.message.includes('Invalid file type')) {
+        return res.status(413).json({ error: 'Payload Too Large or Invalid MIME Type' });
+      }
+      return res.status(413).json({ error: err.message }); // 413 as per requirement for oversized or invalid
     }
     next();
   });
