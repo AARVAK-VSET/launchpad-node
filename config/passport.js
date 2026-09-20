@@ -231,6 +231,12 @@ passport.use(
     async (req, accessToken, refreshToken, params, profile, done) => {
       // GitHub does not provide a refresh token or an expiration
       try {
+          const hasVerifiedEmail = profile.emails && profile.emails.some((email) => email.verified);
+          if (profile.emails && profile.emails.length > 0 && !hasVerifiedEmail) {
+            req.flash('errors', { msg: 'Your email address must be verified with GitHub before you can use it to sign in.' });
+            if (req.session) req.session.returnTo = undefined;
+            return done(null, false);
+          }
         if (req.user) {
           const existingUser = await User.findOne({
             github: { $eq: profile.id },
@@ -366,6 +372,12 @@ const googleStrategyConfig = new GoogleStrategy(
   },
   async (req, accessToken, refreshToken, params, profile, done) => {
     try {
+          const hasVerifiedEmail = profile.emails && profile.emails.some((email) => email.verified || email.verified === 'true');
+          if (profile.emails && profile.emails.length > 0 && !hasVerifiedEmail && profile._json && !profile._json.email_verified) {
+            req.flash('errors', { msg: 'Your email address must be verified with Google before you can use it to sign in.' });
+            if (req.session) req.session.returnTo = undefined;
+            return done(null, false);
+          }
       if (req.user) {
         const existingUser = await User.findOne({
           google: { $eq: profile.id },
@@ -442,6 +454,11 @@ passport.use(
           return done(null, false, {
             message: 'No profile information received.',
           });
+        }
+        if (profile._json && profile._json.email_verified === false) {
+          req.flash('errors', { msg: 'Your email address must be verified with LinkedIn before you can use it to sign in.' });
+          if (req.session) req.session.returnTo = undefined;
+          return done(null, false);
         }
         if (req.user) {
           const existingUser = await User.findOne({
@@ -797,6 +814,11 @@ const discordStrategyConfig = new OAuth2Strategy(
         return done(new Error('Failed to fetch Discord profile'));
       }
       const discordProfile = await response.json();
+      if (discordProfile.email && !discordProfile.verified) {
+         req.flash('errors', { msg: 'Your email address must be verified with Discord before you can use it to sign in.' });
+         if (req.session) req.session.returnTo = undefined;
+         return done(null, false);
+      }
       if (req.user) {
         const existingUser = await User.findOne({ discord: { $eq: discordProfile.id } });
         if (existingUser && existingUser.id !== req.user.id) {
