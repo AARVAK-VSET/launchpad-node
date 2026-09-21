@@ -22,7 +22,7 @@ dotenv.config({ path: '.env.example' });
 /**
  * Set config values
  */
-const secureTransfer = process.env.BASE_URL.startsWith('https');
+const secureTransfer = (process.env.BASE_URL || 'http://localhost:8080').startsWith('https');
 
 /**
  * Rate limiting configuration
@@ -347,7 +347,7 @@ if (process.env.NODE_ENV === 'development') {
  * Start Express server.
  */
 app.listen(app.get('port'), () => {
-  const { BASE_URL } = process.env;
+  const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
   const colonIndex = BASE_URL.lastIndexOf(':');
   const port = parseInt(BASE_URL.slice(colonIndex + 1), 10);
 
