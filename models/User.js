@@ -34,6 +34,10 @@ const userSchema = new mongoose.Schema(
 
     tokens: Array,
 
+    twoFactorSecret: String,
+    twoFactorEnabled: { type: Boolean, default: false },
+    recoveryCodes: [{ code: String, used: { type: Boolean, default: false } }],
+
     profile: {
       name: String,
       gender: String,

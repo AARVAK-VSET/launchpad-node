@@ -1,0 +1,20 @@
+extends ../layout
+
+block content
+  .pb-2.mt-2.mb-4.border-bottom
+    h3 Two-Factor Authentication
+
+  p Enter the 6-digit code from your authenticator app, or one of your recovery codes.
+
+  form(action='/account/2fa/challenge', method='POST')
+    input(type='hidden', name='_csrf', value=_csrf)
+    .form-group.row.mb-3
+      label.col-md-3.col-form-label.font-weight-bold.text-right(for='token') Authentication Code
+      .col-md-7
+        input#token.form-control(type='text', name='token', placeholder='Enter code', required, autocomplete='off', autofocus)
+    .form-group.row
+      .col-md-7.offset-md-3
+        button.btn.btn-primary(type='submit')
+          i.fas.fa-shield-alt.fa-sm.iconpadding
+          | Verify
+        a.btn.btn-link(href='/login') Back to Login
