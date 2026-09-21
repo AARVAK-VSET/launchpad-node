@@ -5,6 +5,9 @@ const sessionSchema = new mongoose.Schema({
   expires: Date,
 });
 
+// Automatically delete sessions once their expiry date has passed
+sessionSchema.index({ expires: 1 }, { expireAfterSeconds: 0 });
+
 sessionSchema.statics = {
   /**
    * Removes all valid sessions for a given user
