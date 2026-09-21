@@ -302,10 +302,11 @@ exports.getLastfm = async (req, res, next) => {
     api_key: process.env.LASTFM_KEY,
     secret: process.env.LASTFM_SECRET,
   });
+  const artistQuery = req.query.artist ? encodeURIComponent(req.query.artist) : 'Roniit';
   const getArtistInfo = () =>
     new Promise((resolve, reject) => {
       lastfm.request('artist.getInfo', {
-        artist: 'Roniit',
+        artist: artistQuery,
         handlers: {
           success: resolve,
           error: reject,
@@ -315,7 +316,7 @@ exports.getLastfm = async (req, res, next) => {
   const getArtistTopTracks = () =>
     new Promise((resolve, reject) => {
       lastfm.request('artist.getTopTracks', {
-        artist: 'Roniit',
+        artist: artistQuery,
         handlers: {
           success: ({ toptracks }) => {
             resolve(toptracks.track.slice(0, 10));
@@ -327,7 +328,7 @@ exports.getLastfm = async (req, res, next) => {
   const getArtistTopAlbums = () =>
     new Promise((resolve, reject) => {
       lastfm.request('artist.getTopAlbums', {
-        artist: 'Roniit',
+        artist: artistQuery,
         handlers: {
           success: ({ topalbums }) => {
             resolve(topalbums.album.slice(0, 3));
