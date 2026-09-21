@@ -237,6 +237,26 @@ passport.use(
             if (req.session) req.session.returnTo = undefined;
             return done(null, false);
           }
+          // Fetch email from GitHub API if profile emails are private/empty
+          if (!profile.emails || profile.emails.length === 0) {
+            try {
+              const emailRes = await fetch('https://api.github.com/user/emails', {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  Accept: 'application/vnd.github+json',
+                },
+              });
+              if (emailRes.ok) {
+                const emails = await emailRes.json();
+                const primaryEmail = emails.find((e) => e.primary && e.verified);
+                if (primaryEmail) {
+                  profile.emails = [{ value: primaryEmail.email, verified: true, primary: true }];
+                }
+              }
+            } catch (fetchErr) {
+              console.error('Failed to fetch GitHub emails:', fetchErr);
+            }
+          }
         if (req.user) {
           const existingUser = await User.findOne({
             github: { $eq: profile.id },
@@ -272,7 +292,7 @@ passport.use(
           return 0;
         });
         const emailFromProvider = sortedEmails.length > 0 ? sortedEmails[0].value : null;
-        const normalizedEmail = emailFromProvider ? validator.normalizeEmail(emailFromProvider, { gmail_remove_dots: false }) : undefined;
+        const normalizedEmail = emailFromProvider ? validator.normalizeEmail(emailFromProvider, { gmail_remove_dots: false }) : `github_${profile.id}@noemail.local`;
         const existingEmailUser = await User.findOne({
           email: { $eq: normalizedEmail },
         });
