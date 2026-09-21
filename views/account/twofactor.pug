@@ -1,0 +1,39 @@
+extends ../layout
+
+block content
+  .pb-2.mt-2.mb-4.border-bottom
+    h3 Two-Factor Authentication
+
+  if recoveryCodes
+    .alert.alert-success
+      h4 2FA Enabled Successfully!
+      p Save these recovery codes in a safe place. Each code can only be used once.
+      ul
+        each code in recoveryCodes
+          li
+            strong= code
+      p Once you leave this page, you will not be able to see these codes again.
+    .form-group
+      .offset-sm-3.col-md-7.pl-2
+        a.btn.btn-primary(href='/account') Back to Account
+
+  else
+    p Scan the QR code below with your authenticator app (Google Authenticator, Authy, etc.)
+    .form-group.row.mb-4
+      .col-md-7.offset-md-3
+        img(src=qrCodeDataUrl, alt='QR Code')
+    p Or enter this secret manually:
+    .form-group.row.mb-4
+      .col-md-7.offset-md-3
+        code= secret
+    form(action='/account/2fa/setup', method='POST')
+      input(type='hidden', name='_csrf', value=_csrf)
+      .form-group.row.mb-3
+        label.col-md-3.col-form-label.font-weight-bold.text-right(for='token') Verification Code
+        .col-md-7
+          input#token.form-control(type='text', name='token', placeholder='Enter 6-digit code', required, autocomplete='off')
+      .form-group.row
+        .col-md-7.offset-md-3
+          button.btn.btn-primary(type='submit')
+            i.fas.fa-shield-alt.fa-sm.iconpadding
+            | Enable 2FA

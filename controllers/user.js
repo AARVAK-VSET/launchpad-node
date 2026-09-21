@@ -2,6 +2,8 @@ const crypto = require('crypto');
 const passport = require('passport');
 const validator = require('validator');
 const mailChecker = require('mailchecker');
+const { authenticator } = require('otplib');
+const QRCode = require('qrcode');
 const User = require('../models/User');
 const Session = require('../models/Session');
 const nodemailerConfig = require('../config/nodemailer');
@@ -102,6 +104,14 @@ Thank you!\n`,
     req.logIn(user, (err) => {
       if (err) {
         return next(err);
+      }
+      if (user.twoFactorEnabled) {
+        req.session.twoFactorUserId = user.id;
+        req.logout((err) => {
+          if (err) return next(err);
+          res.redirect('/account/2fa/challenge');
+        });
+        return;
       }
       req.flash('success', { msg: 'Success! You are logged in.' });
       res.redirect(req.session.returnTo || '/');
@@ -704,5 +714,137 @@ exports.postLogoutEverywhere = async (req, res, next) => {
     });
   } catch (err) {
     return next(err);
+  }
+};
+
+/**
+ * GET /account/2fa/setup
+ * Two-factor authentication setup page.
+ */
+exports.getTwoFactorSetup = async (req, res, next) => {
+  try {
+    const secret = authenticator.generateSecret();
+    const otpauth = authenticator.keyuri(req.user.email, 'LaunchpadNode', secret);
+    const qrCodeDataUrl = await QRCode.toDataURL(otpauth);
+    req.session.twoFactorSecret = secret;
+    res.render('account/twofactor', {
+      title: 'Two-Factor Authentication Setup',
+      qrCodeDataUrl,
+      secret,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /account/2fa/setup
+ * Enable two-factor authentication.
+ */
+exports.postTwoFactorSetup = async (req, res, next) => {
+  try {
+    const secret = req.session.twoFactorSecret;
+    if (!secret) {
+      req.flash('errors', { msg: 'Session expired. Please try again.' });
+      return res.redirect('/account/2fa/setup');
+    }
+    const isValid = authenticator.verify({ token: req.body.token, secret });
+    if (!isValid) {
+      req.flash('errors', { msg: 'Invalid verification code. Please try again.' });
+      return res.redirect('/account/2fa/setup');
+    }
+    // Generate 8 single-use recovery codes
+    const recoveryCodes = Array.from({ length: 8 }, () => ({
+      code: crypto.randomBytes(5).toString('hex').toUpperCase(),
+      used: false,
+    }));
+    const user = await User.findById(req.user.id);
+    user.twoFactorSecret = secret;
+    user.twoFactorEnabled = true;
+    user.recoveryCodes = recoveryCodes;
+    await user.save();
+    req.session.twoFactorSecret = undefined;
+    req.flash('success', { msg: 'Two-factor authentication has been enabled.' });
+    res.render('account/twofactor', {
+      title: 'Two-Factor Authentication Setup',
+      recoveryCodes: recoveryCodes.map((r) => r.code),
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /account/2fa/disable
+ * Disable two-factor authentication.
+ */
+exports.postTwoFactorDisable = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id);
+    user.twoFactorSecret = undefined;
+    user.twoFactorEnabled = false;
+    user.recoveryCodes = [];
+    await user.save();
+    req.flash('success', { msg: 'Two-factor authentication has been disabled.' });
+    res.redirect('/account');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /account/2fa/challenge
+ * Two-factor authentication challenge page.
+ */
+exports.getTwoFactorChallenge = (req, res) => {
+  if (!req.session.twoFactorUserId) {
+    return res.redirect('/login');
+  }
+  res.render('account/2fa-challenge', {
+    title: 'Two-Factor Authentication',
+  });
+};
+
+/**
+ * POST /account/2fa/challenge
+ * Verify two-factor authentication challenge.
+ */
+exports.postTwoFactorChallenge = async (req, res, next) => {
+  try {
+    if (!req.session.twoFactorUserId) {
+      return res.redirect('/login');
+    }
+    const user = await User.findById(req.session.twoFactorUserId);
+    if (!user) {
+      return res.redirect('/login');
+    }
+    // Check TOTP token first
+    const isValidToken = authenticator.verify({ token: req.body.token, secret: user.twoFactorSecret });
+    if (isValidToken) {
+      req.session.twoFactorUserId = undefined;
+      req.logIn(user, (err) => {
+        if (err) return next(err);
+        req.flash('success', { msg: 'Success! You are logged in.' });
+        res.redirect(req.session.returnTo || '/');
+      });
+      return;
+    }
+    // Check recovery codes
+    const recoveryCode = user.recoveryCodes.find((r) => !r.used && r.code === req.body.token.toUpperCase());
+    if (recoveryCode) {
+      recoveryCode.used = true;
+      await user.save();
+      req.session.twoFactorUserId = undefined;
+      req.logIn(user, (err) => {
+        if (err) return next(err);
+        req.flash('success', { msg: 'Success! You are logged in using a recovery code.' });
+        res.redirect(req.session.returnTo || '/');
+      });
+      return;
+    }
+    req.flash('errors', { msg: 'Invalid authentication code. Please try again.' });
+    res.redirect('/account/2fa/challenge');
+  } catch (err) {
+    next(err);
   }
 };
