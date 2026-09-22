@@ -8,11 +8,12 @@ const { HuggingFaceInferenceEmbeddings } = require('@langchain/community/embeddi
 const { MongoDBAtlasVectorSearch, MongoDBAtlasSemanticCache } = require('@langchain/mongodb');
 const { MongoDBStore } = require('@langchain/mongodb');
 const { ChatTogetherAI } = require('@langchain/community/chat_models/togetherai');
-const { HumanMessage } = require('@langchain/core/messages');
+const { AIMessage, HumanMessage, SystemMessage } = require('@langchain/core/messages');
 const { CacheBackedEmbeddings } = require('langchain/embeddings/cache_backed');
 const { MongoClient } = require('mongodb');
 // eslint-disable-next-line import/extensions
 const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.mjs');
+const { pruneConversation } = require('../utils/conversation-window');
 
 /**
  * GET /ai
@@ -32,6 +33,32 @@ const RAG_CHUNKS = 'rag_chunks';
 const DOC_EMBEDDINGS_CACHE = 'doc_emb_cache';
 const QUERY_EMBEDDINGS_CACHE = 'query_emb_cache';
 const LLM_SEMANTIC_CACHE = 'llm_sem_cache';
+const CONVERSATION_WINDOW_OPTIONS = { maxTurns: 20, maxTokens: 4000 };
+const RAG_SYSTEM_PROMPT = 'You are an assistant. Use the supplied context to answer the user question.';
+const LLM_SYSTEM_PROMPT = 'You are a helpful assistant. Answer the user question as accurately as possible.';
+
+function toLangChainMessages(messages) {
+  return messages.map((message) => {
+    if (message.role === 'system') return new SystemMessage(message.content);
+    if (message.role === 'assistant') return new AIMessage(message.content);
+    return new HumanMessage(message.content);
+  });
+}
+
+function getConversationHistory(req, conversationId, systemPrompt, currentUserMessage) {
+  const storedMessages = req.session.aiConversations?.[conversationId] || [];
+  return pruneConversation([{ role: 'system', content: systemPrompt }, ...storedMessages, { role: 'user', content: currentUserMessage }], { ...CONVERSATION_WINDOW_OPTIONS, allowIncompleteTurn: true });
+}
+
+function saveConversationTurn(req, conversationId, systemPrompt, userMessage, assistantMessage) {
+  const storedMessages = req.session.aiConversations?.[conversationId] || [];
+  const boundedMessages = pruneConversation([{ role: 'system', content: systemPrompt }, ...storedMessages, { role: 'user', content: userMessage }, { role: 'assistant', content: assistantMessage }], CONVERSATION_WINDOW_OPTIONS);
+
+  req.session.aiConversations = {
+    ...req.session.aiConversations,
+    [conversationId]: boundedMessages.filter((message) => message.role !== 'system'),
+  };
+}
 
 // Initialization status flags
 let ragFolderReady = false;
@@ -418,13 +445,13 @@ exports.postRagAsk = async (req, res) => {
       cache: llmSemanticCache,
     });
 
-    // RAG prompt
-    const ragPrompt = `You are an assistant. Use the following context to answer the user's question.\n\nContext:\n${context}\n\nQuestion: ${question}\nAnswer:`;
-    // Non-RAG prompt
-    const llmPrompt = `Answer the following question as best as you can:\n${question}\nAnswer:`;
+    const ragPrompt = `Use the following context to answer the user's question.\n\nContext:\n${context}\n\nQuestion:\n${question}`;
+    const llmPrompt = question;
+    const ragMessages = getConversationHistory(req, 'rag', RAG_SYSTEM_PROMPT, ragPrompt);
+    const llmMessages = getConversationHistory(req, 'llm', LLM_SYSTEM_PROMPT, llmPrompt);
 
     // Run batch LLM calls
-    const results = await llm.generate([[new HumanMessage(ragPrompt)], [new HumanMessage(llmPrompt)]]);
+    const results = await llm.generate([toLangChainMessages(ragMessages), toLangChainMessages(llmMessages)]);
 
     // Before parsing the results, check to see if we have a valid response so we don't crash
     if (!results?.generations?.length || results.generations.length < 2) {
@@ -433,6 +460,8 @@ exports.postRagAsk = async (req, res) => {
     }
     const ragResponse = results.generations[0][0].text;
     const llmResponse = results.generations[1][0].text;
+    saveConversationTurn(req, 'rag', RAG_SYSTEM_PROMPT, ragPrompt, ragResponse);
+    saveConversationTurn(req, 'llm', LLM_SYSTEM_PROMPT, llmPrompt, llmResponse);
     res.render('ai/rag', {
       title: 'Retrieval-Augmented Generation (RAG) Demo',
       ingestedFiles,
