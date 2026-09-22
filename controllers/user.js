@@ -429,15 +429,27 @@ exports.getLoginByEmail = async (req, res, next) => {
   }
 
   try {
-    const user = await User.findOne({ loginToken: { $eq: req.params.token } });
+    const hashedIp = User.hashIP(req.ip);
 
-    if (!user || !user.verifyTokenAndIp(user.loginToken, req.ip, 'login')) {
+    // Atomically find and consume the token in a single database operation
+    // This prevents replay attacks where the same token is used concurrently
+    const user = await User.findOneAndUpdate(
+      {
+        loginToken: { $eq: req.params.token },
+        loginIpHash: hashedIp,
+        loginExpires: { $gt: Date.now() },
+      },
+      {
+        $set: { emailVerified: true },
+        $unset: { loginToken: 1, loginExpires: 1, loginIpHash: 1 },
+      },
+      { new: true },
+    );
+
+    if (!user) {
       req.flash('errors', { msg: 'Invalid or expired login link.' });
       return res.redirect('/login');
     }
-
-    user.emailVerified = true; // Mark email as verified since they also proved ownership
-    await user.save();
 
     req.logIn(user, (err) => {
       if (err) {
