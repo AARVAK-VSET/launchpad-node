@@ -391,7 +391,6 @@ exports.getOauthUnlink = async (req, res, next) => {
     let { provider } = req.params;
     provider = validator.escape(provider);
     const user = await User.findById(req.user.id);
-    user[provider.toLowerCase()] = undefined;
     const tokensWithoutProviderToUnlink = user.tokens.filter((token) => token.kind !== provider.toLowerCase());
     // Some auth providers do not provide an email address in the user profile.
     // As a result, we need to verify that unlinking the provider is safe by ensuring
@@ -402,6 +401,8 @@ exports.getOauthUnlink = async (req, res, next) => {
       });
       return res.redirect('/account');
     }
+    
+    user[provider.toLowerCase()] = undefined;
     user.tokens = tokensWithoutProviderToUnlink;
     await user.save();
     req.flash('info', {
