@@ -126,6 +126,18 @@ app.use(passport.session());
 app.use(flash());
 app.use((req, res, next) => {
   if (req.path === '/api/upload' || req.path === '/ai/togetherai-camera') {
+    if (req.method === 'POST') {
+      const origin = req.headers.origin;
+      const referer = req.headers.referer;
+      const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 8080}`;
+      
+      const isOriginValid = origin && origin.startsWith(baseUrl);
+      const isRefererValid = referer && referer.startsWith(baseUrl);
+      
+      if (!isOriginValid && !isRefererValid) {
+        return res.status(403).json({ error: 'Forbidden: Cross-site request rejected' });
+      }
+    }
     // Multer multipart/form-data handling needs to occur before the Lusca CSRF check.
     // WARN: Any path that is not protected by CSRF here should have lusca.csrf() chained
     // in their route handler.
