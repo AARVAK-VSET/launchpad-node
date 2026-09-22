@@ -17,6 +17,14 @@ const validator = require('validator');
 
 const User = require('../models/User');
 
+const upsertProviderToken = async (user, tokenData) => {
+  await User.updateOne({ _id: user._id }, { $pull: { tokens: { kind: tokenData.kind } } });
+  await User.updateOne({ _id: user._id }, { $push: { tokens: tokenData } });
+  // Prevent Mongoose from re-saving the array
+  user.unmarkModified('tokens');
+};
+
+
 passport.serializeUser((user, done) => {
   done(null, user.id);
 });
@@ -129,14 +137,14 @@ async function saveOAuth2UserTokens(req, accessToken, refreshToken, accessTokenE
           refreshTokenExpires: moment().add(refreshTokenExpiration, 'seconds').format(),
         }),
       };
-      user.tokens.push(newToken);
+      await upsertProviderToken(user, newToken);
     }
 
     if (tokenConfig) {
       Object.assign(user, tokenConfig);
     }
 
-    user.markModified('tokens');
+    // user.markModified('tokens');
     await user.save();
     return user;
   } catch (err) {
@@ -345,7 +353,7 @@ passport.use(
           }
           const user = await User.findById(req.user.id);
           user.x = profile.id;
-          user.tokens.push({ kind: 'x', accessToken, tokenSecret });
+          await upsertProviderToken(user, { kind: 'x', accessToken, tokenSecret });
           user.profile.name = user.profile.name || profile.displayName;
           user.profile.location = user.profile.location || profile._json.location;
           user.profile.picture = user.profile.picture || profile._json.profile_image_url_https;
@@ -363,7 +371,7 @@ passport.use(
         // so we can "fake" a X email address as follows:
         user.email = `${profile.username}@x.com`;
         user.x = profile.id;
-        user.tokens.push({ kind: 'x', accessToken, tokenSecret });
+        await upsertProviderToken(user, { kind: 'x', accessToken, tokenSecret });
         user.profile.name = profile.displayName;
         user.profile.location = profile._json.location;
         user.profile.picture = profile._json.profile_image_url_https;
@@ -493,7 +501,7 @@ passport.use(
           }
           const user = await User.findById(req.user.id);
           user.linkedin = profile.id;
-          user.tokens.push({ kind: 'linkedin', accessToken: null }); // null for now since passport-openidconnect isn't returning it yet; will update when it supports it
+          await upsertProviderToken(user, { kind: 'linkedin', accessToken: null }); // null for now since passport-openidconnect isn't returning it yet; will update when it supports it
           user.profile.name = user.profile.name || profile.displayName;
           user.profile.picture = user.profile.picture || profile.photos;
           await user.save();
@@ -517,7 +525,7 @@ passport.use(
         }
         const user = new User();
         user.linkedin = profile.id;
-        user.tokens.push({ kind: 'linkedin', accessToken: null });
+        await upsertProviderToken(user, { kind: 'linkedin', accessToken: null });
         user.email = normalizedEmail;
         user.profile.name = profile.displayName;
         user.profile.picture = profile.photos || '';
@@ -646,7 +654,7 @@ passport.use(
         }
 
         // Save tokens and user info
-        user.tokens.push({ kind: 'tumblr', accessToken: token, tokenSecret });
+        await upsertProviderToken(user, { kind: 'tumblr', accessToken: token, tokenSecret });
         await user.save();
 
         return done(null, user);
@@ -693,7 +701,7 @@ passport.use(
           }
           const user = await User.findById(req.user.id);
           user.steam = steamId;
-          user.tokens.push({ kind: 'steam', accessToken: steamId });
+          await upsertProviderToken(user, { kind: 'steam', accessToken: steamId });
           try {
             const response = await fetch(profileURL);
             if (!response.ok) {
@@ -721,7 +729,7 @@ passport.use(
             const user = new User();
             user.steam = steamId;
             user.email = `${steamId}@steam.com`; // steam does not disclose emails, prevent duplicate keys
-            user.tokens.push({ kind: 'steam', accessToken: steamId });
+            await upsertProviderToken(user, { kind: 'steam', accessToken: steamId });
             user.profile.name = profileData.personaname;
             user.profile.picture = profileData.avatarmedium;
             await user.save();
