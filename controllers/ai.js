@@ -686,6 +686,18 @@ const createImageDataUrl = (file) => {
   return `data:${file.mimetype};base64,${base64Image}`;
 };
 
+const cleanupUploadedFile = (file) => {
+  if (!file) return;
+  if (file.path) {
+    fs.unlink(file.path, (err) => {
+      if (err && err.code !== 'ENOENT') {
+        console.error('Failed to remove temporary upload file:', err);
+      }
+    });
+  }
+  file.buffer = null;
+};
+
 /**
  * GET /ai/togetherai-camera
  * Together AI Camera Analysis Example
@@ -718,12 +730,13 @@ exports.postTogetherAICamera = async (req, res) => {
     const analysis = extractVisionAnalysis(data);
     // console.log('Vision analysis completed:', analysis);
     res.json({ analysis });
-  } catch (error) {
+   } catch (error) {
     console.error('Error analyzing image:', error);
     res.status(500).json({ error: `Error analyzing image: ${error.message}` });
+  } finally {
+    cleanupUploadedFile(req.file);
   }
 };
-
 /**
  * GET /ai/togetherai-classifier
  * Together AI / LLM API Example.
