@@ -381,7 +381,6 @@ exports.getOauthUnlink = async (req, res, next) => {
     let { provider } = req.params;
     provider = validator.escape(provider);
     const user = await User.findById(req.user.id);
-    user[provider.toLowerCase()] = undefined;
     const tokensWithoutProviderToUnlink = user.tokens.filter((token) => token.kind !== provider.toLowerCase());
     // Some auth providers do not provide an email address in the user profile.
     // As a result, we need to verify that unlinking the provider is safe by ensuring
@@ -392,6 +391,8 @@ exports.getOauthUnlink = async (req, res, next) => {
       });
       return res.redirect('/account');
     }
+    
+    user[provider.toLowerCase()] = undefined;
     user.tokens = tokensWithoutProviderToUnlink;
     await user.save();
     req.flash('info', {
@@ -585,25 +586,32 @@ exports.postReset = async (req, res, next) => {
     user.password = req.body.password;
     user.emailVerified = true; // Mark email as verified as well since they proved ownership
     await user.save();
+    
+    // Invalidate all active sessions for this user
+    await Session.removeSessionByUserId(user.id);
 
-    const mailOptions = {
-      to: user.email,
-      from: process.env.SITE_CONTACT_EMAIL,
-      subject: 'Your password has been changed',
-      text: `This is a confirmation that the password for your account ${user.email} has just been changed.\n`,
-    };
-
-    await nodemailerConfig.sendMail({
-      mailOptions,
-      successfulType: 'success',
-      successfulMsg: 'Success! Your password has been changed.',
-      loggingError: 'ERROR: Could not send password reset confirmation email.',
-      errorType: 'warning',
-      errorMsg: 'Your password has been changed, but we could not send you a confirmation email. We will be looking into it.',
-      req,
+    req.session.regenerate(async (err) => {
+      if (err) return next(err);
+      
+      const mailOptions = {
+        to: user.email,
+        from: process.env.SITE_CONTACT_EMAIL,
+        subject: 'Your password has been changed',
+        text: `This is a confirmation that the password for your account ${user.email} has just been changed.\n`,
+      };
+  
+      await nodemailerConfig.sendMail({
+        mailOptions,
+        successfulType: 'success',
+        successfulMsg: 'Success! Your password has been changed.',
+        loggingError: 'ERROR: Could not send password reset confirmation email.',
+        errorType: 'warning',
+        errorMsg: 'Your password has been changed, but we could not send you a confirmation email. We will be looking into it.',
+        req,
+      });
+  
+      res.redirect('/');
     });
-
-    res.redirect('/');
   } catch (err) {
     next(err);
   }
