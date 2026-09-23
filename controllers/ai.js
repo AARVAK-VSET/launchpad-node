@@ -367,6 +367,10 @@ exports.postRagAsk = async (req, res) => {
     return res.redirect('/ai/rag');
   }
 
+  // Abort the upstream LLM call immediately when the client disconnects (Issue #20).
+  const abortController = new AbortController();
+  req.on('close', () => abortController.abort());
+
   const client = new MongoClient(process.env.MONGODB_URI);
   try {
     await client.connect();
@@ -450,8 +454,12 @@ exports.postRagAsk = async (req, res) => {
     const ragMessages = getConversationHistory(req, 'rag', RAG_SYSTEM_PROMPT, ragPrompt);
     const llmMessages = getConversationHistory(req, 'llm', LLM_SYSTEM_PROMPT, llmPrompt);
 
-    // Run batch LLM calls
-    const results = await llm.generate([toLangChainMessages(ragMessages), toLangChainMessages(llmMessages)]);
+    // Run batch LLM calls, forwarding the abort signal so a client disconnect
+    // terminates token consumption immediately (Issue #20).
+    const results = await llm.generate(
+      [toLangChainMessages(ragMessages), toLangChainMessages(llmMessages)],
+      { signal: abortController.signal },
+    );
 
     // Before parsing the results, check to see if we have a valid response so we don't crash
     if (!results?.generations?.length || results.generations.length < 2) {
@@ -462,18 +470,23 @@ exports.postRagAsk = async (req, res) => {
     const llmResponse = results.generations[1][0].text;
     saveConversationTurn(req, 'rag', RAG_SYSTEM_PROMPT, ragPrompt, ragResponse);
     saveConversationTurn(req, 'llm', LLM_SYSTEM_PROMPT, llmPrompt, llmResponse);
-    res.render('ai/rag', {
-      title: 'Retrieval-Augmented Generation (RAG) Demo',
-      ingestedFiles,
-      ragResponse,
-      llmResponse,
-      question,
-      maxInputLength: 500,
-    });
+    if (!res.headersSent) {
+      res.render('ai/rag', {
+        title: 'Retrieval-Augmented Generation (RAG) Demo',
+        ingestedFiles,
+        ragResponse,
+        llmResponse,
+        question,
+        maxInputLength: 500,
+      });
+    }
   } catch (error) {
+    if (error.name === 'AbortError') return; // client disconnected – stop processing silently
     console.error('RAG Error:', error);
-    req.flash('errors', { msg: `Error: ${error.message}` });
-    res.redirect('/ai/rag');
+    if (!res.headersSent) {
+      req.flash('errors', { msg: `Error: ${error.message}` });
+      res.redirect('/ai/rag');
+    }
   } finally {
     await client.close();
   }
@@ -502,6 +515,10 @@ exports.postOpenAIModeration = async (req, res) => {
   let result = null;
   let error = null;
 
+  // Abort the upstream API call immediately when the client disconnects (Issue #20).
+  const abortController = new AbortController();
+  req.on('close', () => abortController.abort());
+
   if (!openAiKey) {
     error = 'OpenAI API key is not set in environment variables.';
   } else if (!inputText.trim()) {
@@ -518,6 +535,7 @@ exports.postOpenAIModeration = async (req, res) => {
           model: 'text-moderation-latest',
           input: inputText,
         }),
+        signal: abortController.signal,
       });
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
@@ -527,17 +545,20 @@ exports.postOpenAIModeration = async (req, res) => {
         result = data.results && data.results[0];
       }
     } catch (err) {
+      if (err.name === 'AbortError') return; // client disconnected – stop processing silently
       console.error('OpenAI Moderation API Error:', err);
       error = 'Failed to call OpenAI Moderation API.';
     }
   }
 
-  res.render('ai/openai-moderation', {
-    title: 'OpenAI Moderation API',
-    result,
-    error,
-    input: inputText,
-  });
+  if (!res.headersSent) {
+    res.render('ai/openai-moderation', {
+      title: 'OpenAI Moderation API',
+      result,
+      error,
+      input: inputText,
+    });
+  }
 };
 
 /**
@@ -545,8 +566,10 @@ exports.postOpenAIModeration = async (req, res) => {
  * We are using LLMs to classify text or analyze a picture taken by the user's camera.
  */
 
-// Shared Together AI API caller
-const callTogetherAiApi = async (apiRequestBody, apiKey) => {
+// Shared Together AI API caller.
+// Accepts an optional AbortSignal so callers can cancel the upstream request
+// immediately when the client disconnects (Issue #20).
+const callTogetherAiApi = async (apiRequestBody, apiKey, signal) => {
   const response = await fetch('https://api.together.xyz/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -554,6 +577,7 @@ const callTogetherAiApi = async (apiRequestBody, apiKey) => {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify(apiRequestBody),
+    signal,
   });
   if (!response.ok) {
     const errData = await response.json().catch(() => ({}));
@@ -717,6 +741,11 @@ exports.postTogetherAICamera = async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No image provided' });
   }
+
+  // Abort the upstream API call immediately when the client disconnects (Issue #20).
+  const abortController = new AbortController();
+  req.on('close', () => abortController.abort());
+
   try {
     const togetherAiKey = process.env.TOGETHERAI_API_KEY;
     const togetherAiModel = process.env.TOGETHERAI_VISION_MODEL;
@@ -726,13 +755,14 @@ exports.postTogetherAICamera = async (req, res) => {
     const dataUrl = createImageDataUrl(req.file);
     const apiRequestBody = createVisionLLMRequestBody(dataUrl, togetherAiModel);
     // console.log('Making Vision API request to Together AI...');
-    const data = await callTogetherAiApi(apiRequestBody, togetherAiKey);
+    const data = await callTogetherAiApi(apiRequestBody, togetherAiKey, abortController.signal);
     const analysis = extractVisionAnalysis(data);
     // console.log('Vision analysis completed:', analysis);
-    res.json({ analysis });
-   } catch (error) {
+    if (!res.headersSent) res.json({ analysis });
+  } catch (error) {
+    if (error.name === 'AbortError') return; // client disconnected – stop processing silently
     console.error('Error analyzing image:', error);
-    res.status(500).json({ error: `Error analyzing image: ${error.message}` });
+    if (!res.headersSent) res.status(500).json({ error: `Error analyzing image: ${error.message}` });
   } finally {
     cleanupUploadedFile(req.file);
   }
@@ -765,6 +795,11 @@ exports.postTogetherAIClassifier = async (req, res) => {
   const inputText = (req.body.inputText || '').slice(0, 300);
   let result = null;
   let error = null;
+
+  // Abort the upstream API call immediately when the client disconnects (Issue #20).
+  const abortController = new AbortController();
+  req.on('close', () => abortController.abort());
+
   if (!togetherAiKey) {
     error = 'TogetherAI API key is not set in environment variables.';
   } else if (!togetherAiModel) {
@@ -775,7 +810,7 @@ exports.postTogetherAIClassifier = async (req, res) => {
     try {
       const systemPrompt = messageClassifierSystemPrompt; // Your existing system prompt here
       const apiRequestBody = createClassifierLLMRequestBody(inputText, togetherAiModel, systemPrompt);
-      const data = await callTogetherAiApi(apiRequestBody, togetherAiKey);
+      const data = await callTogetherAiApi(apiRequestBody, togetherAiKey, abortController.signal);
       const content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
       const department = extractClassifierResponse(content);
       result = {
@@ -784,15 +819,18 @@ exports.postTogetherAIClassifier = async (req, res) => {
         systemPrompt,
       };
     } catch (err) {
+      if (err.name === 'AbortError') return; // client disconnected – stop processing silently
       console.log('TogetherAI Classifier API Error:', err);
       error = 'Failed to call TogetherAI API.';
     }
   }
 
-  res.render('ai/togetherai-classifier', {
-    title: 'TogetherAI Department Classifier',
-    result,
-    error,
-    input: inputText,
-  });
+  if (!res.headersSent) {
+    res.render('ai/togetherai-classifier', {
+      title: 'TogetherAI Department Classifier',
+      result,
+      error,
+      input: inputText,
+    });
+  }
 };
