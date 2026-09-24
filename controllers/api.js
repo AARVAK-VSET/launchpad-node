@@ -985,32 +985,52 @@ exports.getPayPal = async (req, res, next) => {
 exports.getPayPalSuccess = async (req, res) => {
   try {
     const { orderId } = req.session;
-    const accessToken = await getPayPalAccessToken();
-    const response = await fetch(`https://api.sandbox.paypal.com/v2/checkout/orders/${orderId}/capture`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    if (!response.ok) {
-      throw new Error('Failed to capture PayPal payment');
+
+    if (!orderId) {
+      return res.status(400).render('api/paypal', {
+        title: 'PayPal API - Success',
+        result: false,
+        success: false,
+        purchaseInfo,
+        error: 'Missing PayPal order ID.',
+      });
     }
 
-    await response.json(); // Ensure the response is consumed
+    const accessToken = await getPayPalAccessToken();
+
+    const response = await fetch(
+      `https://api.sandbox.paypal.com/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || data.status !== 'COMPLETED') {
+      throw new Error('PayPal payment was not completed');
+    }
 
     res.render('api/paypal', {
       result: true,
       success: true,
       purchaseInfo,
+      paymentStatus: data.status,
+      orderId: data.id,
     });
   } catch (err) {
     console.error(err);
-    res.render('api/paypal', {
-      title: 'Paypal API - Success',
-      result: true,
+
+    res.status(400).render('api/paypal', {
+      title: 'PayPal API - Success',
+      result: false,
       success: false,
       purchaseInfo,
+      error: err.message,
     });
   }
 };
@@ -1028,7 +1048,45 @@ exports.getPayPalCancel = (req, res) => {
     purchaseInfo,
   });
 };
+exports.postPayPalWebhook = async (req, res) => {
+  try {
+    const accessToken = await getPayPalAccessToken();
 
+    const verificationResponse = await fetch(
+      'https://api.sandbox.paypal.com/v1/notifications/verify-webhook-signature',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          auth_algo: req.headers['paypal-auth-algo'],
+          cert_url: req.headers['paypal-cert-url'],
+          transmission_id: req.headers['paypal-transmission-id'],
+          transmission_sig: req.headers['paypal-transmission-sig'],
+          transmission_time: req.headers['paypal-transmission-time'],
+          webhook_id: process.env.PAYPAL_WEBHOOK_ID,
+          webhook_event: req.body,
+        }),
+      },
+    );
+
+    const verification = await verificationResponse.json();
+
+    if (
+      !verificationResponse.ok ||
+      verification.verification_status !== 'SUCCESS'
+    ) {
+      return res.status(400).json({ error: 'Invalid PayPal webhook signature.' });
+    }
+
+    return res.status(200).json({ verified: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Webhook verification failed.' });
+  }
+};
 /**
  * GET /api/lob
  * Lob API example.
