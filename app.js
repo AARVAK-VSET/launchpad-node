@@ -151,6 +151,7 @@ app.use(lusca.xssProtection(true));
 app.disable('x-powered-by');
 app.use((req, res, next) => {
   res.locals.user = req.user;
+  res.locals.path = req.path;
   next();
 });
 // Function to validate if the URL is a safe relative path
