@@ -181,9 +181,13 @@ block content
       });
 
       // Clean up on page unload
-      window.addEventListener('beforeunload', () => {
+      const stopAllTracks = () => {
         if (stream) {
           stream.getTracks().forEach((track) => track.stop());
+          stream = null;
         }
-      });
+      };
+
+      window.addEventListener('beforeunload', stopAllTracks);
+      window.addEventListener('unload', stopAllTracks);
     });
