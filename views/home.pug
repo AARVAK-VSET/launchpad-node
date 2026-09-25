@@ -1,4 +1,5 @@
 extends layout
+
 block head
   //- Opengraph tags
   meta(property='og:title', content='Launchpad Node')
@@ -6,34 +7,40 @@ block head
   meta(property='og:type', content='website')
   meta(property='og:url', content=siteURL)
   meta(property='og:image', content=`${siteURL}/bootstrap-logo.svg`)
-  //- Twitter Card tags (optional but recommended)
+
+  //- Twitter Card tags
   meta(name='twitter:card', content='summary_large_image')
   meta(name='twitter:title', content='Launchpad Node')
   meta(name='twitter:description', content='Production-ready full-stack Node.js web application boilerplate by AARVAK-VSET.')
   meta(name='twitter:image', content=`${siteURL}/bootstrap-logo.svg`)
 
 block content
-  h1 Launchpad Node 🚀
-  p.lead Production-ready full-stack Node.js web application boilerplate by AARVAK-VSET for Patch Wars 2026.
-  hr
-  .row
-    .col-md-6
-      h2 Heading
-      p Donec id elit non mi porta gravida at eget metus. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus. Etiam porta sem malesuada magna mollis euismod. Donec sed odio dui.
-      p
-        a.btn.btn-primary(href='#', role='button') View details »
-    .col-md-6
-      h2 Heading
-      p Donec id elit non mi porta gravida at eget metus. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus. Etiam porta sem malesuada magna mollis euismod. Donec sed odio dui.
-      p
-        a.btn.btn-primary(href='#', role='button') View details »
-    .col-md-6
-      h2 Heading
-      p Donec id elit non mi porta gravida at eget metus. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus. Etiam porta sem malesuada magna mollis euismod. Donec sed odio dui.
-      p
-        a.btn.btn-primary(href='#', role='button') View details »
-    .col-md-6
-      h2 Heading
-      p Donec id elit non mi porta gravida at eget metus. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus. Etiam porta sem malesuada magna mollis euismod. Donec sed odio dui.
-      p
-        a.btn.btn-primary(href='#', role='button') View details »
+  main(role='main', aria-labelledby='page-title')
+    h1#page-title Launchpad Node 🚀
+    p.lead Production-ready full-stack Node.js web application boilerplate by AARVAK-VSET for Patch Wars 2026.
+    hr
+
+    section.row(aria-label='Launchpad features')
+      article.col-md-6(aria-labelledby='feature-one-title')
+        h2#feature-one-title Heading
+        p Donec id elit non mi porta gravida at eget metus. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus. Etiam porta sem malesuada magna mollis euismod. Donec sed odio dui.
+        p
+          a.btn.btn-primary(href='#', role='button') View details »
+
+      article.col-md-6(aria-labelledby='feature-two-title')
+        h2#feature-two-title Heading
+        p Donec id elit non mi porta gravida at eget metus. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus. Etiam porta sem malesuada magna mollis euismod. Donec sed odio dui.
+        p
+          a.btn.btn-primary(href='#', role='button') View details »
+
+      article.col-md-6(aria-labelledby='feature-three-title')
+        h2#feature-three-title Heading
+        p Donec id elit non mi porta gravida at eget metus. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus. Etiam porta sem malesuada magna mollis euismod. Donec sed odio dui.
+        p
+          a.btn.btn-primary(href='#', role='button') View details »
+
+      article.col-md-6(aria-labelledby='feature-four-title')
+        h2#feature-four-title Heading
+        p Donec id elit non mi porta gravida at eget metus. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus. Etiam porta sem malesuada magna mollis euismod. Donec sed odio dui.
+        p
+          a.btn.btn-primary(href='#', role='button') View details »
