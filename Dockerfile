@@ -13,6 +13,10 @@ RUN npm install -g pm2 && \
         npm install; \
     fi
 
+RUN chown -R node:node /starter
+
+USER node
+
 CMD ["pm2-runtime","app.js"]
 
 EXPOSE 8080
