@@ -2,12 +2,19 @@ const validator = require('validator');
 const nodemailerConfig = require('../config/nodemailer');
 
 async function validateReCAPTCHA(token) {
-  const response = await fetch(`https://www.google.com/recaptcha/api/siteverify?secret=${process.env.RECAPTCHA_SECRET_KEY}&response=${token}`, {
+  const body = new URLSearchParams({
+    secret: process.env.RECAPTCHA_SECRET_KEY,
+    response: token,
+  });
+
+  const response = await fetch('https://www.google.com/recaptcha/api/siteverify', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
     },
+    body,
   });
+
   return response.json();
 }
 
